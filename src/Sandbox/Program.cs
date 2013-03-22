@@ -10,12 +10,24 @@ using System.Reactive.Linq;
 namespace Sandbox {
     class Program {
         static void Main(string[] args) {
+            Remote();
+
+            (new AutoResetEvent(false)).WaitOne();
+        }
+
+        static async void Remote() {
+            var remote = new RemoteClient();
+            //var version = await remote.GetVersionAsync();
+            //var connected = await remote.GetConnectedAsync();
+            var process = await remote.GetProcessAsync();
+            //Console.WriteLine(version + " " + connected);
+        }
+
+        static void Quotes() {
             var credentials = GetCredentials();
             var quotes = new QuoteClient();
             quotes.Connect(credentials.Username, credentials.Password);
             quotes.Subscribe("EUR/USD").Subscribe(OnQuote);
-
-            (new AutoResetEvent(false)).WaitOne();
         }
 
         static void OnQuote(Quote quote) {

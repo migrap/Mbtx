@@ -1,74 +1,78 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace Mbtx.Net {
-    internal static class Extensions {
-        public static void Copy<T>(this T[] sourceArray, T[] destinationArray, int length) {
+    public static partial class Extensions {
+        internal static void Copy<T>(this T[] sourceArray, T[] destinationArray, int length) {
             Array.Copy(sourceArray, destinationArray, length);
         }
 
-        public static void Copy<T>(this T[] sourceArray, T[] destinationArray, long length) {
+        internal static void Copy<T>(this T[] sourceArray, T[] destinationArray, long length) {
             Array.Copy(sourceArray, destinationArray, length);
         }
 
-        public static void Copy<T>(this T[] sourceArray, int sourceIndex, T[] destinationArray, int destinationIndex, int length) {
+        internal static void Copy<T>(this T[] sourceArray, int sourceIndex, T[] destinationArray, int destinationIndex, int length) {
             Array.Copy(sourceArray, sourceIndex, destinationArray, destinationIndex, length);
         }
 
-        public static void Copy<T>(this T[] sourceArray, long sourceIndex, T[] destinationArray, long destinationIndex, long length) {
+        internal static void Copy<T>(this T[] sourceArray, long sourceIndex, T[] destinationArray, long destinationIndex, long length) {
             Array.Copy(sourceArray, sourceIndex, destinationArray, destinationIndex, length);
         }
 
-        public static IEnumerable<IEnumerable<T>> Rows<T>(this T[][] source) {
+        internal static IEnumerable<IEnumerable<T>> Rows<T>(this T[][] source) {
             return source;
         }
-        public static byte[] GetBytesTransfered(this SocketAsyncEventArgs source) {
+
+        internal static byte[] GetBytesTransfered(this SocketAsyncEventArgs source) {
             byte[] buffer = new byte[source.BytesTransferred];
             source.Buffer.Copy(source.Offset, buffer, 0, source.BytesTransferred);
             return buffer;
         }
 
-        public static int GetBytesTransfered(this SocketAsyncEventArgs source, byte[] destination) {
+        internal static int GetBytesTransfered(this SocketAsyncEventArgs source, byte[] destination) {
             source.Buffer.Copy(source.Offset, destination, 0, source.BytesTransferred);
             return source.BytesTransferred;
-        }        
+        }
 
-        public static SocketAsyncOperation GetLastOperation(this SocketAsyncEventArgs source) {
+        internal static SocketAsyncOperation GetLastOperation(this SocketAsyncEventArgs source) {
             return GetLastOperation(source, (s) => s.AcceptSocket);
         }
 
-        public static SocketAsyncOperation GetLastOperation(this SocketAsyncEventArgs source, Func<SocketAsyncEventArgs, Socket> socketSelector) {
+        internal static SocketAsyncOperation GetLastOperation(this SocketAsyncEventArgs source, Func<SocketAsyncEventArgs, Socket> socketSelector) {
             return ((source.BytesTransferred == 0) && (source.LastOperation.EqualsAny(SocketAsyncOperation.Receive, SocketAsyncOperation.ReceiveFrom, SocketAsyncOperation.ReceiveMessageFrom)) && (false == socketSelector(source).IsConnected())) ? SocketAsyncOperation.Disconnect : source.LastOperation;
         }
 
-        public static bool EqualsAny<T>(this T obj, params T[] values) {
+        internal static bool EqualsAny<T>(this T obj, params T[] values) {
             return (Array.IndexOf(values, obj) != -1);
         }
 
-        public static bool IsConnected(this Socket socket) {
+        internal static bool IsConnected(this Socket socket) {
             try {
                 return !(socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0);
             }
             catch (SocketException) { return false; }
         }
 
-        public static bool IsNullOrEmpty(this string value) {
+        internal static bool IsNullOrEmpty(this string value) {
             return string.IsNullOrEmpty(value);
         }
 
-        public static string FormatWith(this string input, params object[] formatting) {
+        internal static string FormatWith(this string input, params object[] formatting) {
             return string.Format(input, formatting);
         }
 
-        public static void Foreach<T>(this IEnumerable<T> self, Action<T> action) {
+        internal static void Foreach<T>(this IEnumerable<T> self, Action<T> action) {
             var items = self.ToArray();
             for (int i = 0; i < items.Length; i++) {
                 var item = items[i];
@@ -129,8 +133,36 @@ namespace Mbtx.Net {
             }
         }
 
-        public static string GetLogonDeniedReason(this string message) {
+        internal static string GetLogonDeniedReason(this string message) {
             return message.Substring(message.IndexOf("103=") + "103=".Length).Replace("\n", ": ");
+        }
+
+        internal static IEnumerable<PropertyDescriptor> Where(this PropertyDescriptorCollection collection, Func<PropertyDescriptor, bool> predicate) {
+            foreach (PropertyDescriptor item in collection) {
+                if (predicate(item)) {
+                    yield return item;
+                }
+            }
+        }
+
+        internal static string Join(this IEnumerable<string> source, string seperator = "&") {
+            return string.Join(seperator, source);
+        }
+
+        internal static string AsQuery(this object values) {
+            return (values == null) ? string.Empty : TypeDescriptor.GetProperties(values)
+                .Where(x => x.GetValue(values) != null)
+                .Select(x => string.Format("{0}={1}", HttpUtility.UrlEncode(x.Name), HttpUtility.UrlEncode(x.GetValue(values).ToString())))
+                .Join();
+        }
+
+        internal static Task<T> GetAsync<T>(this RemoteClient client, string path, object values = null) {
+            var requri = (values == null) ? path : "{0}?{1}".FormatWith(path, values.AsQuery());
+            return client.GetAsync<T>(new HttpRequestMessage(HttpMethod.Get, requri));
+        }
+
+        internal static Uri Append(this Uri self, params string[] paths) {
+            return new Uri(paths.Aggregate(self.AbsoluteUri, (current, path) => string.Format("{0}/{1}", current.TrimEnd('/'), path.TrimStart('/'))));
         }
     }
 }
