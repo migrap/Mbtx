@@ -156,8 +156,9 @@ namespace Mbtx.Net {
                 .Join();
         }
 
-        internal static Task<T> GetAsync<T>(this RemoteClient client, string path, object values = null) {
-            var requri = (values == null) ? path : "{0}?{1}".FormatWith(path, values.AsQuery());
+        internal static Task<T> GetAsync<T>(this RemoteClient client, string path, object value = null) {
+            //var requri = (values == null) ? path : "{0}?{1}".FormatWith(path, values.AsQuery());
+            var requri = (value == null) ? path : "{0}/{1}".FormatWith(path, value);
             return client.GetAsync<T>(new HttpRequestMessage(HttpMethod.Get, requri));
         }
 

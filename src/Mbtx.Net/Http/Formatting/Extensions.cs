@@ -1,10 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
+﻿
+using System.Text.RegularExpressions;
 namespace Mbtx.Net.Http.Formatting {
     internal static partial class Extensions {
+        public static int AsInt32(this Group self) {
+            return int.Parse(self.Value);
+        }
     }
 }

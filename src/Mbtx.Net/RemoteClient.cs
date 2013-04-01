@@ -1,15 +1,11 @@
 ﻿using Mbtx.Net.Http;
 using Mbtx.Net.Http.Formatting;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Net;
 using System.Net.Http;
 using System.Net.Http.Formatting;
-using System.Security;
-using System.Text;
 using System.Threading.Tasks;
-using System.Web;
 
 namespace Mbtx.Net {
     public class RemoteClient {
@@ -31,7 +27,17 @@ namespace Mbtx.Net {
 
         internal Task<T> GetAsync<T>(HttpRequestMessage request) {
             request.RequestUri = _client.BaseAddress.Append(request.RequestUri.OriginalString);
-            return _client.SendAsync(request).ContinueWith(x => x.Result.Content.ReadAsAsync<T>(_formatters)).Unwrap();
+
+            //return _client.SendAsync(request)
+            //    .ContinueWith(x => x.Result.Content.ReadAsAsync<T>(_formatters))
+            //    .Unwrap();
+
+            return _client.SendAsync(request)
+                .ContinueWith(x => {
+                    var read = x.Result.Content.ReadAsStringAsync().Result;
+                    return JsonConvert.DeserializeObjectAsync<T>(read);
+                }).Unwrap();
         }
     }
 }
+

@@ -1,19 +1,14 @@
-﻿using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Formatting;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace Mbtx.Net.Http.Formatting {
     internal class RemoteMediaTypeFormatter : JsonMediaTypeFormatter {
         public RemoteMediaTypeFormatter() {
-            //SerializerSettings.Converters.Add(new ProcessConvertor());
+            SerializerSettings.Converters.Add(new ProcessConvertor());
+            SerializerSettings.Converters.Add(new ColorConverter());
         }
 
         public override bool CanReadType(Type type) {
