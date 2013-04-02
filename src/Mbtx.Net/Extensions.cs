@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -111,6 +112,7 @@ namespace Mbtx.Net {
 
         internal static void Receive(this Socket socket, Action<SocketAsyncEventArgs> receive, Action<SocketAsyncEventArgs> disconnect = null) {
             var arguments = new SocketAsyncEventArgs();
+            arguments.UserToken = socket;
             arguments.SetBuffer(new byte[8096], 0, 8096);
 
             var observable = from args in Observable.FromEventPattern<SocketAsyncEventArgs>(
@@ -164,6 +166,48 @@ namespace Mbtx.Net {
 
         internal static Uri Append(this Uri self, params string[] paths) {
             return new Uri(paths.Aggregate(self.AbsoluteUri, (current, path) => string.Format("{0}/{1}", current.TrimEnd('/'), path.TrimStart('/'))));
+        }
+
+        internal static IEnumerable<StreamContent> GetProtomodContent(this SocketAsyncEventArgs self) {
+            return GetProtomodContent(self, Encoding.UTF8);
+        }
+
+        internal static IEnumerable<StreamContent> GetProtomodContent(this SocketAsyncEventArgs self, Encoding encoding) {
+            var buffer = self.GetBytesTransfered();
+            int i = 0, j = 0, k = 0, l = 0;
+
+            for (i = 0; i < buffer.Length; i++) {
+                for (j = i, k = 0; j < buffer.Length && k != 0x0d0a0d0a; j++) {
+                    var ch = buffer[j];
+                    k = (k << 8) | ch;
+                }
+
+                var headers = encoding.GetString(buffer, i, j - i);
+
+                Console.WriteLine(headers);
+                Console.WriteLine();
+
+                var stream = new MemoryStream();
+                var content = new StreamContent(stream);
+
+                headers.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries)
+                   .Foreach(x => {
+                       var parts = x.Split(":".ToCharArray()).Select(s => s.Trim()).ToArray();
+                       var name = parts[0].ToLower();
+                       var value = parts[1];
+
+                       content.Headers.Add(name, value);
+                   });
+
+                i = (int)content.Headers.ContentLength.Value;
+                stream.Write(buffer, j, i);
+                stream.Seek(0, SeekOrigin.Begin);
+
+                yield return content;
+
+                i = j + i;
+            }
+            yield break;
         }
     }
 }

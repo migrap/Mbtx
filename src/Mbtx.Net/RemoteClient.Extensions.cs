@@ -1,5 +1,4 @@
 ﻿using Mbtx.Net.Objects;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace Mbtx.Net {
@@ -60,8 +59,16 @@ namespace Mbtx.Net {
             return await client.GetAsync<Alerts>("alerts");
         }
 
-        public async static Task<Strings> GetTypedValues(this RemoteClient client, string type) {
+        public async static Task<Strings> GetTypedValuesAsync(this RemoteClient client, string type) {
             return await client.GetAsync<Strings>("typedvalues", type);
+        }
+
+        public async static Task<string> GetPreferencesAsync(this RemoteClient client) {
+            return await client.GetAsync<string>("preferences");
+        }
+
+        public async static Task<Protomod> GetEventsAsync(this RemoteClient client, string events = "HealthUpdate,Alerts,CriticalShutdown,Logon,Accounts,Acknowledge,BalanceUpdate,Cancel,Close,Connected,Execute,HistoryAdded,JournalSubmit,Remove,Replace,Submit,Baskets,Charts,PrefsChanged", int port = 0) {
+            return await client.GetAsync<Protomod>(string.Format("{0}/{1}/{2}/{3}".FormatWith("events", "protomod", events, (port) != 0 ? port : client.BaseUri.Port + 1)));
         }
     }
 }

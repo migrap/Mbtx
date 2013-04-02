@@ -9,6 +9,7 @@ namespace Mbtx.Net.Http.Formatting {
         public RemoteMediaTypeFormatter() {
             SerializerSettings.Converters.Add(new ProcessConvertor());
             SerializerSettings.Converters.Add(new ColorConverter());
+            SerializerSettings.Converters.Add(new EncodingConverter());
         }
 
         public override bool CanReadType(Type type) {

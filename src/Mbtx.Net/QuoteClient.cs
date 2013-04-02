@@ -17,11 +17,9 @@ namespace Mbtx.Net {
         private const string SubscribeMessage = "S|1003={0};2000=20000\n";
         private const string LogonMessage = "L|100={0};101={1}\n";
         private ConcurrentDictionary<string, Quote> _quotes = new ConcurrentDictionary<string, Quote>();
-
+        private SocketClient _socket = new SocketClient(Encoding.ASCII);
         private AutoResetEvent _logonAutoResetEvent = new AutoResetEvent(false);
-        private Socket _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        private SocketAsyncEventArgs _receive = new SocketAsyncEventArgs();        
-        private Encoding _encdoing = Encoding.ASCII;
+        
         private Subject<Quote> _subject = new Subject<Quote>();
         private ConcurrentDictionary<string, IObservable<Quote>> _subjects = new ConcurrentDictionary<string, IObservable<Quote>>();
         
@@ -36,15 +34,18 @@ namespace Mbtx.Net {
             var address = await GetQuoteServerAsync(username, password);
             var port = 5020;
             await ConnectAsync(address, port, username, password);
-        }        
+        }
 
         public async Task ConnectAsync(IPAddress address, int port, string username, string password) {
-            await Task.Run(() => {
-                _socket.Connect(address, port);
-                _socket.Receive(OnReceive, OnDisconnect);
-                _socket.Send("L|100={0};101={1}\n".FormatWith(username, password));
-                _logonAutoResetEvent.WaitOne(TimeSpan.FromSeconds(10));
-            });
+            await ConnectAsync(new IPEndPoint(address, port), username, password);
+        }
+
+        public async Task ConnectAsync(IPEndPoint endPoint, string username, string password) {
+            await _socket.ConnectAsync(endPoint);
+            _socket.Receive(OnReceive, OnDisconnect);
+            _socket.Send("L|100={0};101={1}\n".FormatWith(username, password));
+            _logonAutoResetEvent.WaitOne(TimeSpan.FromSeconds(10));
+
         }
 
         public IObservable<Quote> Subscribe(string symbol) {
@@ -126,12 +127,7 @@ namespace Mbtx.Net {
 
                     quotes.Add(quote);                    
                 }
-
-                if (quotes.Count != 1) {
-                    bool here = true;
-                }
-                quotes.Distinct().Foreach(OnNext);
-                
+                quotes.Distinct().Foreach(OnNext);                
             }
             catch (Exception ex) {
                 Console.WriteLine("{0} -> {1}", ex.Message, message);

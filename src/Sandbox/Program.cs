@@ -23,16 +23,21 @@ namespace Sandbox {
             //var version = await remote.GetVersionAsync();
             //var connected = await remote.GetConnectedAsync();
             //var process = await remote.GetProcessAsync();
-            var accounts = await remote.GetAccountsAsync();
-            var account = accounts.First(x => x.AccountIdentifier.EndsWith("24077"));
-            var positions = await remote.GetPositionsAsync(account);
+            //var accounts = await remote.GetAccountsAsync();
+            //var account = accounts.First(x => x.AccountIdentifier.EndsWith("24077"));
+            //var positions = await remote.GetPositionsAsync(account);
             //var routes = await remote.GetRoutessAsync();
             //var history = await remote.GetOrderHistoryAsync();
             //var orders = await remote.GetOrdersAsync();
             //var alerts = await remote.GetAlertsAsync();
-            //var types = await remote.GetTypedValues("CAPACITYVALUES");
+            //var types = await remote.GetTypedValues("CAPACITYVALUES");       
+
+            var protomod = await remote.GetEventsAsync();
+            await remote.ConnectAsync(protomod);
 
             //Console.WriteLine(version + " " + connected);
+
+            (new AutoResetEvent(false)).WaitOne();
         }
 
         static void Quotes() {
