@@ -70,9 +70,9 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Mbtx.Net\Mbtx.Net.csproj">
-      <Project>{8da94062-2c23-4fc7-9ee1-6058076051ab}</Project>
-      <Name>Mbtx.Net</Name>
+    <ProjectReference Include="..\Mbtx\Mbtx.csproj">
+      <Project>{889266b7-9f38-4871-a201-5e38b8b83210}</Project>
+      <Name>Mbtx</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using System.Reactive.Linq;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
-using Mbtx.Net.Objects;
+using Mbtx.Data;
 
 namespace Sandbox {
     class Program {
@@ -19,21 +19,12 @@ namespace Sandbox {
         }
 
         static async void Remote() {
-            var remote = new RemoteClient();
-            //var version = await remote.GetVersionAsync();
-            //var connected = await remote.GetConnectedAsync();
-            //var process = await remote.GetProcessAsync();
-            //var accounts = await remote.GetAccountsAsync();
-            //var account = accounts.First(x => x.AccountIdentifier.EndsWith("24077"));
-            //var positions = await remote.GetPositionsAsync(account);
-            //var routes = await remote.GetRoutessAsync();
-            //var history = await remote.GetOrderHistoryAsync();
-            //var orders = await remote.GetOrdersAsync();
-            //var alerts = await remote.GetAlertsAsync();
-            //var types = await remote.GetTypedValues("CAPACITYVALUES");       
-
+            var remote = new RemoteClient();            
             var protomod = await remote.GetEventsAsync();
             await remote.ConnectAsync(protomod);
+
+            remote.Position.Subscribe(p => Console.WriteLine(p));
+            remote.Transaction.Subscribe(t => Console.WriteLine(t));
 
             //Console.WriteLine(version + " " + connected);
 
