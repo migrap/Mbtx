@@ -19,14 +19,14 @@ namespace Sandbox {
         }
 
         static async void Remote() {
-            var remote = new RemoteClient();            
+            var remote = new RemoteClient();
+            //var about = await remote.GetAboutAsync();
+            //var connected = await remote.GetConnectedAsync();
+            //var version = await remote.GetVersionAsync();
+            //var process = await remote.GetProcessAsync();
+            //var accounts = await remote.GetAccountsAsync();
+            //var positions = await remote.GetPositionsAsync(accounts.First());
             var protomod = await remote.GetEventsAsync();
-            await remote.ConnectAsync(protomod);
-
-            remote.Position.Subscribe(p => Console.WriteLine(p));
-            remote.Transaction.Subscribe(t => Console.WriteLine(t));
-
-            //Console.WriteLine(version + " " + connected);
 
             (new AutoResetEvent(false)).WaitOne();
         }

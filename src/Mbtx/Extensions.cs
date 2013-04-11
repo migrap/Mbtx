@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Formatting;
 using System.Net.Sockets;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
@@ -175,6 +176,35 @@ namespace Mbtx {
             if (null != handle) {
                 handle(sender, e);
             }
+        }
+
+        internal static string ToQueryString(this object values) {
+            return (values == null) ? string.Empty : TypeDescriptor.GetProperties(values)
+                .Where(x => x.GetValue(values) != null)
+                .Select(x => "{0}={1}".FormatWith(x.Name.UrlEncode(), x.GetValue(values).UrlEncode()))
+                .Join("&");
+        }
+
+        /// <summary>
+        /// Uses Uri.EscapeDataString() based on recommendations on MSDN
+        /// http://blogs.msdn.com/b/yangxind/archive/2006/11/09/don-t-use-net-system-uri-unescapedatastring-in-url-decoding.aspx
+        /// </summary>
+        internal static string UrlEncode(this string self) {
+            return Uri.EscapeDataString(self);
+        }
+
+        internal static string UrlEncode(this object self) {
+            return UrlEncode(self.ToString());
+        }
+
+        public static async Task EnsureSuccessStatusCode(this HttpResponseMessage message, bool @throw = true) {
+            if (@throw && !message.IsSuccessStatusCode) {
+                throw new ApiException(message, "The API query failed with status code {0}: {1}".FormatWith(message.StatusCode, message.ReasonPhrase));
+            }
+        }
+
+        internal static Task<T> ReadAsAsync<T>(this HttpContent content, MediaTypeFormatter formatter) {
+            return content.ReadAsAsync<T>(new[] { formatter });
         }
     }
 }

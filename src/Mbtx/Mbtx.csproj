@@ -62,6 +62,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ApiException.cs" />
     <Compile Include="Configuration\QuoteClientConfiguration.cs" />
     <Compile Include="Extensions.cs" />
     <Compile Include="Net\Http\Formatting\ColorConverter.cs" />
@@ -69,6 +70,9 @@
     <Compile Include="Net\Http\Formatting\Extensions.cs" />
     <Compile Include="Net\Http\Formatting\ProcessConvertor.cs" />
     <Compile Include="Net\Http\Formatting\RemoteMediaTypeFormatter.cs" />
+    <Compile Include="Net\Http\Formatting\VersionConverter.cs" />
+    <Compile Include="Net\Http\HttpRequestMessageConfigurator.cs" />
+    <Compile Include="Net\Http\IHttpRequestMessageConfigurator.cs" />
     <Compile Include="Net\Http\RemoteDelegatingHandler.cs" />
     <Compile Include="Net\QuoteClient.cs" />
     <Compile Include="Net\RemoteClient.cs" />

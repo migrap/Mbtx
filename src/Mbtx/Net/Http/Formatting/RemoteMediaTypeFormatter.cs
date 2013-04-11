@@ -14,6 +14,7 @@ namespace Mbtx.Net.Http.Formatting {
             SerializerSettings.Converters.Add(new ProcessConvertor());
             SerializerSettings.Converters.Add(new ColorConverter());
             SerializerSettings.Converters.Add(new EncodingConverter());
+            SerializerSettings.Converters.Add(new VersionConverter());
             SerializerSettings.DateFormatHandling = DateFormatHandling.MicrosoftDateFormat;
         }
 

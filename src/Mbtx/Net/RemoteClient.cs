@@ -28,20 +28,18 @@ namespace Mbtx.Net {
         private HttpMessageHandler _handler;
         private SocketClient _socket;
         private Protomod _protomod;
-        private Handle _handle;
+        
         private Subject<Position> _position = new Subject<Position>();
         private Subject<Transaction> _transaction = new Subject<Transaction>();
 
         public RemoteClient(string scheme = "http", string host = "127.0.0.1", int port = 8000, string path = "desktopservice") {
-            _handler = new RemoteDelegatingHandler();
-
             _streams.GetConsumingEnumerable()
                 .ToObservable(Scheduler.Default)
                 .Subscribe(OnStreamContent);
 
             var builder = new UriBuilder { Scheme = scheme, Host = host, Port = port, Path = path };
 
-            _http = new HttpClient(_handler) {
+            _http = new HttpClient(new RemoteDelegatingHandler()) {
                 Timeout = TimeSpan.FromMinutes(5),
                 BaseAddress = builder.Uri,
             };
@@ -196,41 +194,51 @@ namespace Mbtx.Net {
                 //else if (header.Value.Contains("WatchlistRenamed")) {
                 //}
             }
+        }        
+
+        private async Task<HttpResponseMessage> SendAsync(HttpMethod method, Action<IHttpRequestMessageConfigurator> configure) {
+            var configurator = new HttpRequestMessageConfigurator();
+
+            configurator.Method(method);
+            configurator.BaseAddress(_http.BaseAddress);
+            configure(configurator);
+
+            var request = configurator.Build();
+
+            var response = await _http.SendAsync(request).ConfigureAwait(false);
+            await response.EnsureSuccessStatusCode(true).ConfigureAwait(false);
+            return response;
         }
 
-        internal Task<T> SendAsync<T>(HttpRequestMessage request) {
-            return SendAsync(request)
-                .ContinueWith(x => x.Result.Content.ReadAsAsync<T>(_formatters))
-                .Unwrap();
+        private async Task<HttpResponseMessage> GetAsync(string path, object values = null) {
+            return await SendAsync(HttpMethod.Get, x => {
+                x.Path(path);
+                x.Values(values);
+            });
         }
 
-        internal Task<TResult> SendAsync<TValue, TResult>(HttpRequestMessage request, TValue value) {
-            request.Content = new ObjectContent<TValue>(value, _formatter);
-
-            return SendAsync(request)
-                .ContinueWith(x => x.Result.Content.ReadAsAsync<TResult>(_formatters))
-                .Unwrap();
+        private async Task<T> GetAsync<T>(string path, object values = null) {
+            return await GetAsync(path, values)
+                .ConfigureAwait(false)
+                .GetAwaiter()
+                .GetResult()
+                .Content.ReadAsAsync<T>(_formatter)
+                .ConfigureAwait(false);
         }
 
-        internal Task<HttpResponseMessage> SendAsync(HttpRequestMessage request) {
-            request.RequestUri = _http.BaseAddress.Append(request.RequestUri.OriginalString);
-            return _http.SendAsync(request);
+        private async Task<HttpResponseMessage> PostAsync(string path) {
+            return await SendAsync(HttpMethod.Post, x => {
+                x.Path(path);
+            });
         }
 
-        internal Task<HttpResponseMessage> PostAsync<T>(T value, params object[] segments) {
-            var uri = segments.Join("/");
-            var content = new ObjectContent<T>(value, _formatter);
-            var request = new HttpRequestMessage(HttpMethod.Post, uri) {
-                Content = content
-            };
-
-            return SendAsync(request);
-        }
-
-        private Task<T> GetAsync<T>(params object[] segments) {
-            var uri = segments.Join("/");
-            var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            return SendAsync<T>(request);
+        private async Task<T> PostAsync<T>(string path) where T : class {
+            return await PostAsync(path)
+                .ConfigureAwait(false)
+                .GetAwaiter()
+                .GetResult()
+                .Content.ReadAsAsync<T>(_formatter)
+                .ConfigureAwait(false);
         }
 
         public async Task<string> GetAboutAsync() {
@@ -241,26 +249,20 @@ namespace Mbtx.Net {
             return await GetAsync<bool>("connected");
         }
 
-        public async Task<string> GetVersionAsync() {
-            return await GetAsync<string>("version");
+        public async Task<Version> GetVersionAsync() {
+            return await GetAsync<Version>("version");
         }
 
         public async Task<Process> GetProcessAsync() {
             return await GetAsync<Process>("process");
-        }
-
-        public async Task<Handle> RegisterAsync(string id) {
-            var handle = await GetAsync<Handle>("register", id);
-            Interlocked.Exchange<Handle>(ref _handle, handle);
-            return handle;
-        }
+        }        
 
         public async Task<Accounts> GetAccountsAsync() {
             return await GetAsync<Accounts>("accounts");
         }
 
-        public async Task<string> GetPositionsAsync() {
-            return await GetAsync<string>("positions");
+        public async Task<Positions> GetPositionsAsync() {
+            return await GetAsync<Positions>("positions");
         }
 
         public async Task<Positions> GetPositionsAsync(Account account) {
@@ -296,19 +298,25 @@ namespace Mbtx.Net {
         }
 
         public async Task<Protomod> GetEventsAsync(string events = "HealthUpdate,Alerts,CriticalShutdown,Logon,Accounts,Acknowledge,BalanceUpdate,Cancel,Close,Connected,Execute,HistoryAdded,JournalSubmit,Remove,Replace,Submit,Baskets,Charts,PrefsChanged", int port = 0) {
-            return await GetAsync<Protomod>("events", "protomod", events, (port) != 0 ? port : _http.BaseAddress.Port + 1);
+            return await GetAsync<Protomod>("{0}/{1}/{2}/{3}".FormatWith("events", "protomod", events, (port) != 0 ? port : _http.BaseAddress.Port + 1));
         }
 
-        public async Task<HttpResponseMessage> SubmitOrderAsync(OrderInfo order) {
-            return await PostAsync<OrderInfo>(order, "submitorder", _handle);
-        }
+        //public async Task<Handle> RegisterAsync(string id) {
+        //    var handle = await GetAsync<Handle>("register", id);
+        //    Interlocked.Exchange<Handle>(ref _handle, handle);
+        //    return handle;
+        //}
 
-        public async Task<HttpResponseMessage> ReplaceOrderAsync(OrderInfo orderInfo, Order order) {
-            return await PostAsync<OrderInfo>(orderInfo, "replaceorder", _handle, order.OrderNumber);
-        }
+        //public async Task<HttpResponseMessage> SubmitOrderAsync(OrderInfo order) {
+        //    return await PostAsync<OrderInfo>(order, "submitorder", _handle);
+        //}
 
-        public async Task<HttpResponseMessage> CancelOrderAsync(Order order) {
-            return await PostAsync<string>(String.Empty, "cancelorder", _handle, order.OrderNumber);
-        }
+        //public async Task<HttpResponseMessage> ReplaceOrderAsync(OrderInfo orderInfo, Order order) {
+        //    return await PostAsync<OrderInfo>(orderInfo, "replaceorder", _handle, order.OrderNumber);
+        //}
+
+        //public async Task<HttpResponseMessage> CancelOrderAsync(Order order) {
+        //    return await PostAsync<string>(String.Empty, "cancelorder", _handle, order.OrderNumber);
+        //}
     }
 }
