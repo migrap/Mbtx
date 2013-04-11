@@ -8,7 +8,6 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
-using System.Security;
 using System.Security.Authentication;
 using System.Text;
 using System.Threading;

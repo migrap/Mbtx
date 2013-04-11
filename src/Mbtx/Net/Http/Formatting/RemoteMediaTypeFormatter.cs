@@ -1,11 +1,6 @@
 ﻿using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
 using System;
-using System.ComponentModel;
-using System.IO;
-using System.Net.Http;
 using System.Net.Http.Formatting;
-using System.Threading.Tasks;
 
 namespace Mbtx.Net.Http.Formatting {
     internal class RemoteMediaTypeFormatter : JsonMediaTypeFormatter {
