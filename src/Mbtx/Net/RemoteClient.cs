@@ -11,6 +11,7 @@ using System.Net.Sockets;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Threading;
 using System.Threading.Tasks;
 
 
@@ -19,13 +20,14 @@ namespace Mbtx.Net {
         private BlockingCollection<StreamContent> _streams = new BlockingCollection<StreamContent>();
         private RemoteMediaTypeFormatter _formatter = new RemoteMediaTypeFormatter();
         private IEnumerable<RemoteMediaTypeFormatter> _formatters = new[] { new RemoteMediaTypeFormatter() };
-        private HttpClient _http;
-        private HttpMessageHandler _handler;
+        private HttpClient _http;        
         private SocketClient _socket;
         private Protomod _protomod;
+        private Handle _handle;
         
         private Subject<Position> _position = new Subject<Position>();
         private Subject<Transaction> _transaction = new Subject<Transaction>();
+        private Subject<HistoryAdded> _history = new Subject<HistoryAdded>();
 
         public RemoteClient(string scheme = "http", string host = "127.0.0.1", int port = 8000, string path = "desktopservice") {
             _streams.GetConsumingEnumerable()
@@ -46,6 +48,10 @@ namespace Mbtx.Net {
 
         public IObservable<Transaction> Transaction {
             get { return _transaction; }
+        }
+
+        public IObservable<HistoryAdded> History {
+            get { return _history; }
         }
 
         public async Task ConnectAsync(Protomod value) {
@@ -73,7 +79,10 @@ namespace Mbtx.Net {
                 if (header.Equals(default(KeyValuePair<string, IEnumerable<string>>))) {
                 }
                 else if (header.Value.Contains("HistoryAdded")) {
-                    value.ReadAsAsync<HistoryAdded>().ContinueWith(x => x.Result);
+                    value.ReadAsAsync<HistoryAdded>().ContinueWith(x => {
+                        var result = x.Result;                        
+                        _history.OnNext(result);
+                    });
                 }
                 else if (header.Value.Contains("PositionAdded")) {
                     value.ReadAsAsync<Position>().ContinueWith(x => _position.OnNext(x.Result));
@@ -102,9 +111,29 @@ namespace Mbtx.Net {
                         _transaction.OnNext(result);
                     });
                 }
+                else if (header.Value.Contains("Live")) {
+                    value.ReadAsAsync<Transaction>().ContinueWith(x => {
+                        var result = x.Result;
+                        result.Type = "Live";
+                        _transaction.OnNext(result);
+                    });
+                }
+                else if (header.Value.Contains("Cancelled")) {
+                    value.ReadAsAsync<Transaction>().ContinueWith(x => {
+                        var result = x.Result;
+                        result.Type = "Cancelled";
+                        _transaction.OnNext(result);
+                    });
+                }
+                else if (header.Value.Contains("Execute")) {
+                    value.ReadAsAsync<Transaction>().ContinueWith(x => {
+                        var result = x.Result;
+                        result.Type = "Execute";
+                        _transaction.OnNext(result);
+                    });
+                }
                 else {
-                    var result = value.ReadAsStringAsync().Result;
-                    Console.WriteLine("{0} -> {1}", header.Value.First(), result);
+                    var result = value.ReadAsStringAsync().Result;                    
                 }
 
 
@@ -127,9 +156,7 @@ namespace Mbtx.Net {
                 //else if (header.Value.Contains("AccountUnavailable")) {
                 //}
                 //else if (header.Value.Contains("AccountsListBuilt")) {
-                //}
-                //else if (header.Value.Contains("Acknowledge")) {
-                //}
+                //}                
                 //else if (header.Value.Contains("BalanceUpdate")) {
                 //}
                 //else if (header.Value.Contains("CancelPlaced")) {
@@ -143,8 +170,6 @@ namespace Mbtx.Net {
                 //else if (header.Value.Contains("Connected")) {
                 //}
                 //else if (header.Value.Contains("DefaultAccountChanged")) {
-                //}
-                //else if (header.Value.Contains("Execute")) {
                 //}                
                 //else if (header.Value.Contains("JournalSubmit")) {
                 //}                
@@ -199,8 +224,8 @@ namespace Mbtx.Net {
             configure(configurator);
 
             var request = configurator.Build();
+            var response = await _http.SendAsync(request).ConfigureAwait(false);            
 
-            var response = await _http.SendAsync(request).ConfigureAwait(false);
             await response.EnsureSuccessStatusCode(true).ConfigureAwait(false);
             return response;
         }
@@ -234,6 +259,14 @@ namespace Mbtx.Net {
                 .GetResult()
                 .Content.ReadAsAsync<T>(_formatter)
                 .ConfigureAwait(false);
+        }
+
+        private async Task<HttpResponseMessage> PostAsync(string path, object value) {
+            return await SendAsync(HttpMethod.Post, x => {
+                x.Path(path);
+                x.Content(value);
+                x.Formatter(_formatter);
+            });
         }
 
         public async Task<string> GetAboutAsync() {
@@ -296,22 +329,24 @@ namespace Mbtx.Net {
             return await GetAsync<Protomod>("{0}/{1}/{2}/{3}".FormatWith("events", "protomod", events, (port) != 0 ? port : _http.BaseAddress.Port + 1));
         }
 
-        //public async Task<Handle> RegisterAsync(string id) {
-        //    var handle = await GetAsync<Handle>("register", id);
-        //    Interlocked.Exchange<Handle>(ref _handle, handle);
-        //    return handle;
-        //}
+        public async Task<Handle> RegisterAsync(string id) {
+            var handle = await GetAsync<Handle>("{0}/{1}".FormatWith("register", id));
+            Interlocked.Exchange<Handle>(ref _handle, handle);
+            return handle;
+        }        
 
-        //public async Task<HttpResponseMessage> SubmitOrderAsync(OrderInfo order) {
-        //    return await PostAsync<OrderInfo>(order, "submitorder", _handle);
-        //}
+        public async Task<bool> SendOrderAsync(OrderInfo order) {
+            return await PostAsync("{0}/{1}".FormatWith("submitorder", _handle), order)
+                .ContinueWith(x => x.Result.StatusCode == HttpStatusCode.OK);
+        }
 
         //public async Task<HttpResponseMessage> ReplaceOrderAsync(OrderInfo orderInfo, Order order) {
         //    return await PostAsync<OrderInfo>(orderInfo, "replaceorder", _handle, order.OrderNumber);
         //}
 
-        //public async Task<HttpResponseMessage> CancelOrderAsync(Order order) {
-        //    return await PostAsync<string>(String.Empty, "cancelorder", _handle, order.OrderNumber);
-        //}
+        public async Task<bool> CancelOrderAsync(string orderid) {
+            return await PostAsync("{0}/{1}/{2}".FormatWith("cancelorder", _handle, orderid))
+                .ContinueWith(x => x.Result.StatusCode == HttpStatusCode.OK);
+        }
     }
 }

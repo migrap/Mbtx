@@ -137,21 +137,20 @@ namespace Mbtx {
         }
 
         internal static IEnumerable<StreamContent> GetStreamContent(this SocketAsyncEventArgs self, Encoding encoding) {
-            var buffer = self.GetBytesTransfered();
+            var buffer = self.GetBytesTransfered();            
             int i = 0, j = 0, k = 0, l = 0;
+            var streams = new List<StreamContent>();
 
             for (i = 0; i < buffer.Length; i++) {
                 for (j = i, k = 0; j < buffer.Length && k != 0x0d0a0d0a; j++) {
                     var ch = buffer[j];
                     k = (k << 8) | ch;
                 }
-
                 var headers = encoding.GetString(buffer, i, j - i);
-
                 var stream = new MemoryStream();
                 var content = new StreamContent(stream);
 
-                headers.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries)
+                headers.Split(new string[] { "\r\n" }, StringSplitOptions.RemoveEmptyEntries)
                    .Foreach(x => {
                        var parts = x.Split(":".ToCharArray()).Select(s => s.Trim()).ToArray();
                        var name = parts[0].ToLower();
@@ -164,11 +163,12 @@ namespace Mbtx {
                 stream.Write(buffer, j, i);
                 stream.Seek(0, SeekOrigin.Begin);
 
-                yield return content;
+                streams.Add(content);
 
-                i = j + i;
+                i = j + i - 1;
             }
-            yield break;
+
+            return streams;
         }
 
         internal static void Raise<TEventArgs>(this EventHandler<TEventArgs> self, object sender, TEventArgs e) where TEventArgs : EventArgs {

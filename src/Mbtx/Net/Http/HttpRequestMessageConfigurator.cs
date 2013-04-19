@@ -1,5 +1,8 @@
-﻿using System;
+﻿using Mbtx.Data;
+using System;
+using System.Diagnostics.Contracts;
 using System.Net.Http;
+using System.Net.Http.Formatting;
 
 namespace Mbtx.Net.Http {
     internal class HttpRequestMessageConfigurator : IHttpRequestMessageConfigurator {
@@ -7,6 +10,8 @@ namespace Mbtx.Net.Http {
         private string _path;
         private object _values;
         private Uri _baseaddress;
+        private object _content;
+        private MediaTypeFormatter _formatter;
 
         internal void BaseAddress(Uri value) {
             _baseaddress = value;
@@ -25,17 +30,32 @@ namespace Mbtx.Net.Http {
         }
 
         public HttpRequestMessage Build() {
+            Contract.Requires((_method == HttpMethod.Post) && (_content != null && _formatter != null));
+
             var builder = new UriBuilder(_baseaddress) {
                 Query = _values.ToQueryString(),
             };
+
             builder.Path = "{0}/{1}".FormatWith(builder.Path, _path);
 
             var message = new HttpRequestMessage {
                 Method = _method,
-                RequestUri = builder.Uri,
+                RequestUri = builder.Uri,               
             };
 
+            if (_content != null) {
+                message.Content = new ObjectContent(_content.GetType(), _content, _formatter);
+            }
+
             return message;
+        }
+
+        public void Content(object value) {
+            _content = value;
+        }
+
+        public void Formatter(MediaTypeFormatter value) {
+            _formatter = value;
         }
     }
 }

@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace Mbtx.Net {
     internal class SocketClient {
         private Socket _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        private SocketAsyncEventArgs _receive = new SocketAsyncEventArgs();
+        private SocketAsyncEventArgs _receive;        
         private Encoding _encdoing;
 
         public SocketClient()
@@ -16,6 +16,8 @@ namespace Mbtx.Net {
 
         public SocketClient(Encoding encoding) {
             _encdoing = encoding;
+            _receive = new SocketAsyncEventArgs();
+            _receive.SetBuffer(new byte[8096],0,8096);
         }
 
         public async Task ConnectAsync(IPEndPoint endPoint) {            

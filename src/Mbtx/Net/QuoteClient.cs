@@ -50,6 +50,8 @@ namespace Mbtx.Net {
 
         }
 
+        public bool Connected { get; private set; }
+
         public IObservable<Quote> Subscribe(string symbol) {
             _socket.Send(SubscribeMessage.FormatWith(symbol));
             return _subjects.GetOrAdd(symbol, (s) => _subject.Where(q => q.Symbol == symbol));
@@ -82,6 +84,7 @@ namespace Mbtx.Net {
         }
 
         private void ProcessLogonAccepted(string message) {
+            Connected = true;
             _logonAutoResetEvent.Set();
         }
 
@@ -94,7 +97,7 @@ namespace Mbtx.Net {
             if ((message.IsNullOrEmpty()) || (false == message.Contains("1003="))) { return; }
             try {
                 var lines = message.Split("\r\n".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
-                var quotes = new List<Quote>();                
+                var quotes = new List<Quote>();
 
                 for (int i = 0; i < lines.Length; i++) {
 
@@ -127,9 +130,10 @@ namespace Mbtx.Net {
                         quote.DateTime = new DateTimeOffset(date);
                     }
 
-                    quotes.Add(quote);                    
+                    quotes.Add(quote);
                 }
-                quotes.Distinct().Foreach(OnNext);                
+
+                quotes.Distinct().Foreach(OnNext);
             }
             catch (Exception ex) {
                 Console.WriteLine("{0} -> {1}", ex.Message, message);
