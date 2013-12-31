@@ -1,7 +1,7 @@
 ﻿using System;
 
 namespace Mbtx.Data {
-    public sealed class Quote {
+    public sealed class Ticker {
         public string Symbol { get; set; }
         public DateTimeOffset DateTime { get; set; }
         public double BidPrice { get; set; }

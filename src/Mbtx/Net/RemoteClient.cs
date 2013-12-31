@@ -20,11 +20,11 @@ namespace Mbtx.Net {
         private BlockingCollection<StreamContent> _streams = new BlockingCollection<StreamContent>();
         private RemoteMediaTypeFormatter _formatter = new RemoteMediaTypeFormatter();
         private IEnumerable<RemoteMediaTypeFormatter> _formatters = new[] { new RemoteMediaTypeFormatter() };
-        private HttpClient _http;        
+        private HttpClient _http;
         private SocketClient _socket;
         private Protomod _protomod;
         private Handle _handle;
-        
+
         private Subject<Position> _position = new Subject<Position>();
         private Subject<Transaction> _transaction = new Subject<Transaction>();
         private Subject<HistoryAdded> _history = new Subject<HistoryAdded>();
@@ -54,86 +54,83 @@ namespace Mbtx.Net {
             get { return _history; }
         }
 
-        public async Task ConnectAsync(Protomod value) {
+        public Task<bool> ConnectAsync(Protomod value) {
+            var tcs = new TaskCompletionSource<bool>();
             _protomod = value;
-            _socket = _socket ?? new SocketClient(value.Encoding);
-            await _socket.ConnectAsync(new IPEndPoint(IPAddress.Loopback, value.Port))
-                .ContinueWith(x => _socket.Receive(OnReceive, OnDisconnect));
+            
+            _socket = _socket ?? (_socket = new SocketClient(IPAddress.Loopback, value.Port));
+            _socket.Received += (s, e) => OnReceive(e);
+            _socket.Disconnected += (s, e) => OnDisconnect(e);
+            _socket.Connected += (s, e) => {
+                _socket.Receive();
+                tcs.SetResult(true);
+            };
+
+            _socket.Connect();
+
+            return tcs.Task;
         }
 
         private void OnReceive(SocketAsyncEventArgs e) {
             e.GetStreamContent(_protomod.Encoding).Foreach(_streams.Add);
-
-            if (_socket.Connected) {
-                _socket.ReceiveAsync(e);
-            }
+            _socket.Receive();
         }
 
         private void OnDisconnect(SocketAsyncEventArgs e) {
         }
 
         private void OnStreamContent(StreamContent value) {
-            if (value.Headers.ContentType != null) {
+            if(value.Headers.ContentType != null) {
                 var header = value.Headers.FirstOrDefault(x => x.Key.Equals("x-type"));
 
-                if (header.Equals(default(KeyValuePair<string, IEnumerable<string>>))) {
-                }
-                else if (header.Value.Contains("HistoryAdded")) {
+                if(header.Equals(default(KeyValuePair<string, IEnumerable<string>>))) {
+                } else if(header.Value.Contains("HistoryAdded")) {
                     value.ReadAsAsync<HistoryAdded>().ContinueWith(x => {
-                        var result = x.Result;                        
+                        var result = x.Result;
                         _history.OnNext(result);
                     });
-                }
-                else if (header.Value.Contains("PositionAdded")) {
+                } else if(header.Value.Contains("PositionAdded")) {
                     value.ReadAsAsync<Position>().ContinueWith(x => _position.OnNext(x.Result));
-                }
-                else if (header.Value.Contains("PositionUpdated")) {
+                } else if(header.Value.Contains("PositionUpdated")) {
                     value.ReadAsAsync<Position>().ContinueWith(x => _position.OnNext(x.Result));
-                }
-                else if (header.Value.Contains("Submit")) {
+                } else if(header.Value.Contains("Submit")) {
                     value.ReadAsAsync<Transaction>().ContinueWith(x => {
                         var result = x.Result;
                         result.Type = "Submit";
                         _transaction.OnNext(result);
                     });
-                }
-                else if (header.Value.Contains("Acknowledge")) {
+                } else if(header.Value.Contains("Acknowledge")) {
                     value.ReadAsAsync<Transaction>().ContinueWith(x => {
                         var result = x.Result;
                         result.Type = "Acknowledge";
                         _transaction.OnNext(result);
                     });
-                }
-                else if (header.Value.Contains("CancelPlaced")) {
+                } else if(header.Value.Contains("CancelPlaced")) {
                     value.ReadAsAsync<Transaction>().ContinueWith(x => {
                         var result = x.Result;
                         result.Type = "CancelPlaced";
                         _transaction.OnNext(result);
                     });
-                }
-                else if (header.Value.Contains("Live")) {
+                } else if(header.Value.Contains("Live")) {
                     value.ReadAsAsync<Transaction>().ContinueWith(x => {
                         var result = x.Result;
                         result.Type = "Live";
                         _transaction.OnNext(result);
                     });
-                }
-                else if (header.Value.Contains("Cancelled")) {
+                } else if(header.Value.Contains("Cancelled")) {
                     value.ReadAsAsync<Transaction>().ContinueWith(x => {
                         var result = x.Result;
                         result.Type = "Cancelled";
                         _transaction.OnNext(result);
                     });
-                }
-                else if (header.Value.Contains("Execute")) {
+                } else if(header.Value.Contains("Execute")) {
                     value.ReadAsAsync<Transaction>().ContinueWith(x => {
                         var result = x.Result;
                         result.Type = "Execute";
                         _transaction.OnNext(result);
                     });
-                }
-                else {
-                    var result = value.ReadAsStringAsync().Result;                    
+                } else {
+                    var result = value.ReadAsStringAsync().Result;
                 }
 
 
@@ -214,7 +211,7 @@ namespace Mbtx.Net {
                 //else if (header.Value.Contains("WatchlistRenamed")) {
                 //}
             }
-        }        
+        }
 
         private async Task<HttpResponseMessage> SendAsync(HttpMethod method, Action<IHttpRequestMessageConfigurator> configure) {
             var configurator = new HttpRequestMessageConfigurator();
@@ -224,7 +221,7 @@ namespace Mbtx.Net {
             configure(configurator);
 
             var request = configurator.Build();
-            var response = await _http.SendAsync(request).ConfigureAwait(false);            
+            var response = await _http.SendAsync(request).ConfigureAwait(false);
 
             await response.EnsureSuccessStatusCode(true).ConfigureAwait(false);
             return response;
@@ -283,7 +280,7 @@ namespace Mbtx.Net {
 
         public async Task<Process> GetProcessAsync() {
             return await GetAsync<Process>("process");
-        }        
+        }
 
         public async Task<Accounts> GetAccountsAsync() {
             return await GetAsync<Accounts>("accounts");
@@ -333,7 +330,7 @@ namespace Mbtx.Net {
             var handle = await GetAsync<Handle>("{0}/{1}".FormatWith("register", id));
             Interlocked.Exchange<Handle>(ref _handle, handle);
             return handle;
-        }        
+        }
 
         public async Task<bool> SendOrderAsync(OrderInfo order) {
             return await PostAsync("{0}/{1}".FormatWith("submitorder", _handle), order)

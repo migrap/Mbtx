@@ -15,51 +15,121 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 
 namespace Mbtx.Net {
+    internal class ConnectSettings {
+        public IPEndPoint EndPoint { get; set; }
+        public int ReceiveBufferSize { get; set; }
+        public string Username { get; set; }
+        public string Password { get; set; }
+    }
+
+    internal class Message {
+        public byte[] Buffer;
+        public int Count;
+    }
+
     public class QuoteClient {
         private const string SubscribeMessage = "S|1003={0};2000=20000\n";
         private const string LogonMessage = "L|100={0};101={1}\n";
-        private ConcurrentDictionary<string, Quote> _quotes = new ConcurrentDictionary<string, Quote>();
-        private SocketClient _socket = new SocketClient(Encoding.ASCII);
-        private AutoResetEvent _logonAutoResetEvent = new AutoResetEvent(false);
-        
-        private Subject<Quote> _subject = new Subject<Quote>();
-        private ConcurrentDictionary<string, IObservable<Quote>> _subjects = new ConcurrentDictionary<string, IObservable<Quote>>();
-        
-        public QuoteClient() {                      
+        private const int Port = 5020;
+        private ConcurrentDictionary<string, Ticker> _tickers = new ConcurrentDictionary<string, Ticker>();
+        private SocketClient _socket;
+        private string _username;
+        private string _password;
+                
+        private Subject<Ticker> _ticker = new Subject<Ticker>();
+        private ConcurrentDictionary<string, IObservable<Ticker>> _subscriptions = new ConcurrentDictionary<string, IObservable<Ticker>>();
+        private TaskCompletionSource<bool> _connected;
+        private Message _message;
+        private Subject<byte[]> _packets = new Subject<byte[]>();        
+                
+        public QuoteClient() {
+            _packets.Subscribe(OnPacket);            
         }
 
-        public void Connect(string username, string password) {
-            ConnectAsync(username, password).Wait();
+        public Task<bool> ConnectAsync(string username, string password) {
+            var address = (IPAddress)null;
+            var port = Port;
+
+            _username = username;
+            _password = password;
+
+            _connected = new TaskCompletionSource<bool>();
+
+            try {
+                address = GetQuoteServerAsync(username, password).Result;                
+            } catch(Exception ex) {
+                _connected.SetException(ex);
+            }
+
+            _socket = new SocketClient(address, port);
+            _socket.Received += OnReceive;
+            _socket.Connected += OnConnected;
+            _socket.Disconnected += OnDisconnected;
+
+            _socket.Connect();
+
+            return _connected.Task;
         }
 
-        public async Task ConnectAsync(string username, string password) {
-            var address = await GetQuoteServerAsync(username, password);
-            var port = 5020;
-            await ConnectAsync(address, port, username, password);
+        private void OnReceive(object sender, SocketAsyncEventArgs e) {
+            _message = _message ?? (_message = new Message() { Buffer = e.Buffer });
+
+            if(e.SocketError == SocketError.Success && e.BytesTransferred > 0) {
+                var buffer = e.Buffer;
+                var count = e.BytesTransferred;
+                var message = _message;
+
+                if(count <= 0) {
+                    return;
+                }
+
+                message.Count += count;
+                if(message.Count > buffer.Length) {
+                    return;
+                }
+
+                for(int i = message.Count - 1; i >= 1; i--) {
+                    if(buffer[i] == 0x0a) {
+                        count = i + 1;
+                        message.Count = message.Count - count;
+                        break;
+                    }
+                }
+
+                var packet = new byte[count];
+                Buffer.BlockCopy(buffer, 0, packet, 0, count);
+                _packets.OnNext(packet);
+
+                if(message.Count != 0) {
+                    Buffer.BlockCopy(message.Buffer, count, message.Buffer, 0, message.Count);
+                }
+                _socket.Receive(message.Count, message.Buffer.Length - message.Count);
+
+            } else {
+                OnDisconnected(sender, e);
+            }
         }
 
-        public async Task ConnectAsync(IPAddress address, int port, string username, string password) {
-            await ConnectAsync(new IPEndPoint(address, port), username, password);
+        private void OnConnected(object sender, SocketAsyncEventArgs e) {
+            _socket.Receive();            
+            _socket.Send("L|100={0};101={1}\n".FormatWith(_username, _password));
         }
 
-        public async Task ConnectAsync(IPEndPoint endPoint, string username, string password) {
-            await _socket.ConnectAsync(endPoint);
-            _socket.Receive(OnReceive, OnDisconnect);
-            _socket.Send("L|100={0};101={1}\n".FormatWith(username, password));
-            _logonAutoResetEvent.WaitOne(TimeSpan.FromSeconds(10));
+        private void OnDisconnected(object sender, SocketAsyncEventArgs e) {
+            var address = (IPAddress)null;
+            var port = Port;
 
+            try {
+                address = GetQuoteServerAsync(_username, _password).Result;
+                _socket.RemoteEndPoint = new IPEndPoint(address, port);
+
+            } finally {
+                _socket.Connect();
+            }
         }
 
-        public bool Connected { get; private set; }
-
-        public IObservable<Quote> Subscribe(string symbol) {
-            _socket.Send(SubscribeMessage.FormatWith(symbol));
-            return _subjects.GetOrAdd(symbol, (s) => _subject.Where(q => q.Symbol == symbol));
-        }
-
-        private void OnReceive(SocketAsyncEventArgs e) {
-            var bytes = e.GetBytesTransfered();
-            var message = Encoding.ASCII.GetString(bytes);
+        private void OnPacket(byte[] buffer) {
+            var message = Encoding.ASCII.GetString(buffer).Replace("\n", String.Empty);
 
             switch (message[0]) {
                 case 'G':
@@ -74,74 +144,75 @@ namespace Mbtx.Net {
                 default:
                     break;
             }
-
-            if (_socket.Connected) {
-                _socket.ReceiveAsync(e);
-            }
-        }
-
-        private void OnDisconnect(SocketAsyncEventArgs e) {
         }
 
         private void ProcessLogonAccepted(string message) {
-            Connected = true;
-            _logonAutoResetEvent.Set();
+            _connected.SetResult(true);
+            _subscriptions.Keys.ToArray().Foreach(x => Subscribe(x));
         }
 
         private void ProcessLogonDenied(string message) {
             message = message.GetLogonDeniedReason();
-            throw new InvalidCredentialException(message);
+            _connected.SetException(new InvalidCredentialException(message));
         }
 
         private void ProcessLevel1Update(string message) {
-            if ((message.IsNullOrEmpty()) || (false == message.Contains("1003="))) { return; }
-            try {
-                var lines = message.Split("\r\n".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
-                var quotes = new List<Quote>();
+            var lines = message.Split(new string[] { "1|" }, StringSplitOptions.RemoveEmptyEntries);
+            for(int i = 0; i < lines.Length; i++) {
 
-                for (int i = 0; i < lines.Length; i++) {
+                var split = lines[i].Split("|;".ToCharArray());
 
-                    var split = lines[i].Split("|;".ToCharArray());
+                var symbol = split.Where(s => s.StartsWith("1003=")).Select(s => s.Replace("1003=", string.Empty)).FirstOrDefault();
 
-                    var symbol = split.Where(s => s.StartsWith("1003=")).Select(s => s.Replace("1003=", string.Empty)).FirstOrDefault();
+                var ticker = _tickers.GetOrAdd(symbol, (s) => new Ticker() { Symbol = s });
 
-                    var quote = _quotes.GetOrAdd(symbol, (s) => new Quote() { Symbol = s });
+                for(int j = 0; j < split.Length; j++) {
+                    var tev = split[j].Split("=".ToCharArray(), StringSplitOptions.None);
+                    if(tev.Length != 2) { continue; }
 
-                    for (int j = 0; j < split.Length; j++) {
-                        var tev = split[j].Split("=".ToCharArray(), StringSplitOptions.None);
-                        if (tev.Length != 2) { continue; }
+                    var date = DateTime.Now.Date;
+                    var time = DateTime.Now.TimeOfDay;
 
-                        var date = DateTime.Now.Date;
-                        var time = DateTime.Now.TimeOfDay;
-
-                        switch (tev[0]) {
-                            case "2003": quote.BidPrice = double.Parse(tev[1]); break;
-                            case "2004": quote.AskPrice = double.Parse(tev[1]); break;
-                            case "2002": quote.LastPrice = double.Parse(tev[1]); break;
-                            case "2007": quote.LastSize = int.Parse(tev[1]); break;
-                            case "2005": quote.BidSize = int.Parse(tev[1]); break;
-                            case "2006": quote.AskSize = int.Parse(tev[1]); break;
-                            case "2015": date = DateTime.ParseExact(tev[1], "MM/dd/yyyy", null); break;
-                            case "2014": time = TimeSpan.Parse(tev[1]); break;
-                            default: break;
-                        }
-
-                        date = date.Date.Add(time);
-                        quote.DateTime = new DateTimeOffset(date);
+                    switch(tev[0]) {
+                        case "2003":
+                            ticker.BidPrice = double.Parse(tev[1]);
+                            break;
+                        case "2004":
+                            ticker.AskPrice = double.Parse(tev[1]);
+                            break;
+                        case "2002":
+                            ticker.LastPrice = double.Parse(tev[1]);
+                            break;
+                        case "2007":
+                            ticker.LastSize = int.Parse(tev[1]);
+                            break;
+                        case "2005":
+                            ticker.BidSize = int.Parse(tev[1]);
+                            break;
+                        case "2006":
+                            ticker.AskSize = int.Parse(tev[1]);
+                            break;
+                        case "2015":
+                            date = DateTime.ParseExact(tev[1], "MM/dd/yyyy", null);
+                            break;
+                        case "2014":
+                            time = TimeSpan.Parse(tev[1]);
+                            break;
+                        default:
+                            break;
                     }
 
-                    quotes.Add(quote);
+                    date = date.Date.Add(time);
+                    ticker.DateTime = new DateTimeOffset(date);
                 }
 
-                quotes.Distinct().Foreach(OnNext);
-            }
-            catch (Exception ex) {
-                Console.WriteLine("{0} -> {1}", ex.Message, message);
+                _ticker.OnNext(ticker);
             }
         }
 
-        private void OnNext(Quote quote) {
-            _subject.OnNext(quote);
+        public IObservable<Ticker> Subscribe(string symbol) {
+            _socket.Send(SubscribeMessage.FormatWith(symbol));
+            return _subscriptions.GetOrAdd(symbol, (s) => _ticker.Where(q => q.Symbol == symbol));
         }
 
         private async Task<IPAddress> GetQuoteServerAsync(string username, string password) {
@@ -154,6 +225,17 @@ namespace Mbtx.Net {
                 .Attributes()
                 .Where(xa => xa.Name.LocalName.Equals("quote_server", StringComparison.InvariantCultureIgnoreCase)).First();
             return IPAddress.Parse(attribute.Value);
+        }
+    }
+
+    public static partial class Extensions {
+        internal static void Send(this SocketClient socket, string value) {
+            Send(socket, value, Encoding.ASCII);
+        }
+
+        internal static void Send(this SocketClient socket, string value, Encoding encoding) {
+            var buffer = encoding.GetBytes(value);
+            socket.Send(buffer, 0, buffer.Length);
         }
     }
 }
